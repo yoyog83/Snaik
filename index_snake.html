@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Snake — yogev</title>
+  <style>
+    :root { --bg:#0b0f14; --fg:#e7f0ff; --grid:#1f2937; --food:#ef4444; --snake:#22c55e; }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;overscroll-behavior:contain}
+    .wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px;height:100%}
+    h1{font-size:18px;margin:6px 0 0;opacity:.9}
+    .hud{display:flex;gap:14px;align-items:center;justify-content:center;flex-wrap:wrap}
+    .badge{background:#0e1726;border:1px solid #243244;border-radius:10px;padding:6px 10px;min-width:90px;text-align:center}
+    canvas{background:#0a1220;border:2px solid #22324a;border-radius:8px;touch-action:none}
+    .controls{position:fixed;left:0;right:0;bottom:0;padding:10px;background:linear-gradient(180deg,rgba(11,15,20,0),rgba(11,15,20,.85));display:grid;grid-template-columns:repeat(3,1fr);gap:8px;z-index:10}
+    .btn{background:#0e1726;border:1px solid #334155;color:var(--fg);padding:16px 8px;border-radius:16px;font-weight:700;font-size:16px;touch-action:manipulation}
+    .btn:active{transform:scale(0.98)}
+    .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;grid-column:span 3}
+    .row .btn{width:100%}
+    .spacer{height:110px}
+    .watermark{position:absolute;top:10px;left:10px;color:rgba(231,240,255,.15);font-weight:800;letter-spacing:1px;pointer-events:none;user-select:none}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>סנייק — <span style="opacity:.8">yogev</span></h1>
+    <div class="hud">
+      <div class="badge">ניקוד: <span id="score">0</span></div>
+      <div class="badge">שיא: <span id="best">0</span></div>
+      <button id="pauseBtn" class="btn" style="min-width:100px">השהה</button>
+    </div>
+    <div class="watermark">yogev</div>
+    <canvas id="game" width="480" height="480" aria-label="לוח המשחק" role="img"></canvas>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="controls">
+    <div></div>
+    <button class="btn" data-act="up">⬆️ למעלה</button>
+    <div></div>
+    <button class="btn" data-act="left">⬅️ שמאלה</button>
+    <button class="btn" data-act="down">⬇️ למטה</button>
+    <button class="btn" data-act="right">ימינה ➡️</button>
+    <div class="row">
+      <button class="btn" id="restart">🔄 אתחול</button>
+      <button class="btn" id="speed">⚡ מהירות</button>
+      <button class="btn" id="mute">🔊 שקט</button>
+    </div>
+  </div>
+
+  <script>
+  // Grid config
+  const COLS=20, ROWS=20, CELL=24; // canvas 480x480
+  const cvs=document.getElementById('game'); const ctx=cvs.getContext('2d');
+  ctx.imageSmoothingEnabled=false;
+
+  // State
+  let snake, dir, nextDir, food, score=0, best=+localStorage.getItem('snake_best_yogev')||0;
+  let speed=140, last=0, acc=0, paused=false, gameOver=false, sounds=true;
+
+  // Sounds (simple beeps using WebAudio)
+  const AudioCtx = window.AudioContext||window.webkitAudioContext;
+  const audio = AudioCtx? new AudioCtx(): null;
+  function beep(freq=440,ms=80){ if(!sounds||!audio) return; const o=audio.createOscillator();const g=audio.createGain();o.type='sine';o.frequency.value=freq;o.connect(g);g.connect(audio.destination);g.gain.setValueAtTime(0.07,audio.currentTime);o.start();o.stop(audio.currentTime+ms/1000); }
+
+  function init(){
+    snake=[{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+    dir={x:1,y:0}; nextDir={x:1,y:0};
+    placeFood();
+    score=0; gameOver=false; paused=false;
+    document.getElementById('score').textContent=score;
+    document.getElementById('best').textContent=best;
+  }
+
+  function placeFood(){
+    do{
+      food={x: (Math.random()*COLS)|0, y:(Math.random()*ROWS)|0};
+    }while(snake.some(s=>s.x===food.x && s.y===food.y));
+  }
+
+  function changeDir(nx,ny){
+    if((nx===-dir.x && ny===-dir.y) || (nx===dir.x && ny===dir.y)) { nextDir={x:nx,y:ny}; return; }
+    if(dir.x!==nx || dir.y!==ny) nextDir={x:nx,y:ny};
+  }
+
+  function step(ts){
+    if(!paused && !gameOver){
+      const dt=ts-last; last=ts; acc+=dt;
+      while(acc>=speed){
+        acc-=speed;
+        dir=nextDir;
+        const head={x: (snake[0].x+dir.x+COLS)%COLS, y: (snake[0].y+dir.y+ROWS)%ROWS};
+        // collision with body
+        if(snake.some(s=>s.x===head.x && s.y===head.y)) { gameOver=true; beep(220,200); break; }
+        snake.unshift(head);
+        if(head.x===food.x && head.y===food.y){
+          score+=10; document.getElementById('score').textContent=score; beep(880,60); placeFood();
+          if(score>best){ best=score; localStorage.setItem('snake_best_yogev',best); document.getElementById('best').textContent=best; }
+        }else{
+          snake.pop();
+        }
+      }
+    } else { last=ts; }
+    draw();
+    requestAnimationFrame(step);
+  }
+
+  function draw(){
+    // bg
+    ctx.fillStyle='#0a1220'; ctx.fillRect(0,0,cvs.width,cvs.height);
+    // grid
+    ctx.strokeStyle='rgba(255,255,255,.05)';
+    for(let i=0;i<=COLS;i++){ ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,ROWS*CELL); ctx.stroke(); }
+    for(let j=0;j<=ROWS;j++){ ctx.beginPath(); ctx.moveTo(0,j*CELL); ctx.lineTo(COLS*CELL,j*CELL); ctx.stroke(); }
+
+    // "yogev" drawn inside board (watermark)
+    ctx.save();
+    ctx.fillStyle='rgba(231,240,255,.07)';
+    ctx.font='bold 48px system-ui'; ctx.textAlign='center';
+    ctx.translate(cvs.width/2, cvs.height/2);
+    ctx.fillText('yogev', 0, 12);
+    ctx.restore();
+
+    // food
+    drawCell(food.x, food.y, getFoodColor());
+
+    // snake
+    for(let i=snake.length-1;i>=0;i--){
+      const s=snake[i];
+      const color = i===0 ? '#34d399' : '#22c55e';
+      drawCell(s.x, s.y, color, i===0);
+    }
+
+    if(gameOver){
+      ctx.fillStyle='rgba(0,0,0,.6)'; ctx.fillRect(0,0,cvs.width,cvs.height);
+      ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='bold 26px system-ui';
+      ctx.fillText('Game Over — הקש אתחול', cvs.width/2, cvs.height/2);
+    }
+  }
+
+  function getFoodColor(){ return '#ef4444'; }
+
+  function drawCell(x,y,color,head=false){
+    const px=x*CELL, py=y*CELL;
+    ctx.fillStyle=color; ctx.fillRect(px+2,py+2,CELL-4,CELL-4);
+    if(head){
+      ctx.fillStyle='rgba(0,0,0,.2)'; ctx.fillRect(px+4,py+4, CELL-8, CELL-8);
+    }
+  }
+
+  // Input
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='ArrowLeft') changeDir(-1,0);
+    else if(e.key==='ArrowRight') changeDir(1,0);
+    else if(e.key==='ArrowUp') changeDir(0,-1);
+    else if(e.key==='ArrowDown') changeDir(0,1);
+    else if(e.code==='Space' && !gameOver){ speed = 80; } // speed up while holding
+  });
+  window.addEventListener('keyup', (e)=>{ if(e.code==='Space'){ speed = Math.min(speed, 140); } });
+
+  // Buttons
+  document.querySelectorAll('[data-act]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const a=btn.dataset.act;
+      if(a==='left') changeDir(-1,0);
+      if(a==='right') changeDir(1,0);
+      if(a==='up') changeDir(0,-1);
+      if(a==='down') changeDir(0,1);
+    });
+  });
+  document.getElementById('restart').addEventListener('click', ()=>{ init(); });
+  document.getElementById('pauseBtn').addEventListener('click', ()=>{ if(!gameOver){ paused=!paused; document.getElementById('pauseBtn').textContent=paused?'המשך':'השהה'; } });
+  document.getElementById('speed').addEventListener('click', ()=>{ speed = speed===140? 90 : 140; });
+  document.getElementById('mute').addEventListener('click', ()=>{ sounds=!sounds; document.getElementById('mute').textContent = sounds?'🔊 שקט':'🔈 צליל'; });
+
+  // Touch gestures on canvas
+  let sx=0, sy=0, st=0;
+  cvs.addEventListener('touchstart', e=>{
+    const t=e.changedTouches[0]; sx=t.clientX; sy=t.clientY; st=performance.now(); e.preventDefault();
+  }, {passive:false});
+  cvs.addEventListener('touchend', e=>{
+    const t=e.changedTouches[0]; const dx=t.clientX-sx, dy=t.clientY-sy; const adx=Math.abs(dx), ady=Math.abs(dy);
+    if(Math.max(adx,ady) < 12){ // tap
+      // toggle pause on tap top area
+      const rect=cvs.getBoundingClientRect();
+      const y = t.clientY - rect.top;
+      if(y < rect.height*0.25){ paused=!paused; document.getElementById('pauseBtn').textContent=paused?'המשך':'השהה'; }
+    }else if(adx>ady){ changeDir(dx>0?1:-1,0); }
+    else { changeDir(0, dy>0?1:-1); }
+    e.preventDefault();
+  }, {passive:false});
+
+  function fitCanvas(){
+    const maxW=Math.min(window.innerWidth-20, 520);
+    cvs.style.width = maxW+'px';
+    cvs.style.height = maxW+'px';
+  }
+  window.addEventListener('resize', fitCanvas);
+
+  // Start
+  init(); fitCanvas(); requestAnimationFrame(step);
+  </script>
+</body>
+</html>
